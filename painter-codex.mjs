@@ -63,7 +63,7 @@ export async function generateImage(_apiKey, analysis, refImages = [], options =
 
   // 找新的 rollout 文件
   const afterFiles = listRollouts(sessionsRoot)
-  const newFiles = afterFiles.filter(f => !beforeFiles.has(f))
+  const newFiles = [...afterFiles].filter(f => !beforeFiles.has(f))
 
   if (newFiles.length === 0) {
     throw new Error('Codex 没有产生新的 rollout 文件，生图可能失败')
