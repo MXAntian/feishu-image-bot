@@ -79,6 +79,53 @@ function isDuplicate(msgId) {
   return false
 }
 
+// ── 任务队列 ────────────────────────────────────────────────
+const taskQueue = []
+let activeTask = null
+
+function getQueuePosition(msgId) {
+  const idx = taskQueue.findIndex(t => t.msgId === msgId)
+  return idx === -1 ? -1 : idx + 1
+}
+
+function getQueueLength() {
+  return taskQueue.length + (activeTask ? 1 : 0)
+}
+
+async function enqueueTask(event) {
+  const msg = event?.message
+  if (!msg) return
+
+  const msgId = msg.message_id
+  const chatId = msg.chat_id
+
+  if (isDuplicate(msgId)) return
+
+  // 支持群消息（@机器人）和单聊
+  if (msg.chat_type !== 'group' && msg.chat_type !== 'p2p') return
+
+  const queueLen = getQueueLength()
+  if (queueLen > 0) {
+    await sendText(creds, chatId, `📋 收到！前面还有 ${queueLen} 个任务在排队，请稍等~`)
+  }
+
+  taskQueue.push({ event, msgId, chatId })
+  processQueue()
+}
+
+async function processQueue() {
+  if (activeTask || taskQueue.length === 0) return
+
+  const task = taskQueue.shift()
+  activeTask = task
+  try {
+    await handleMessage(task.event)
+  } finally {
+    activeTask = null
+    processQueue()
+  }
+}
+
 // ── 处理单条消息 ────────────────────────────────────────────
 async function handleMessage(event) {
   const msg = event?.message
@@ -89,12 +136,7 @@ async function handleMessage(event) {
   const msgType = msg.message_type
   const senderId = event.sender?.sender_id?.open_id
 
-  if (isDuplicate(msgId)) return
-
-  // 支持群消息（@机器人）和单聊
-  if (msg.chat_type !== 'group' && msg.chat_type !== 'p2p') return
-
-  log(`📨 收到消息 type=${msgType} from=${senderId} chat=${chatId}`)
+  log(`📨 处理消息 type=${msgType} from=${senderId} chat=${chatId}`)
 
   try {
     // 1. 提取文字内容
@@ -198,9 +240,9 @@ function startWSClient() {
     'im.message.receive_v1': async (data) => {
       if (VERBOSE) log(`[event] im.message.receive_v1`)
       try {
-        await handleMessage(data)
+        await enqueueTask(data)
       } catch (e) {
-        log(`❌ handleMessage error: ${e.message}`)
+        log(`❌ enqueueTask error: ${e.message}`)
       }
     },
   })
