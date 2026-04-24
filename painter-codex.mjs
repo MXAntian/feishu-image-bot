@@ -143,6 +143,7 @@ function runCodex(codexExe, instruction, refPaths, timeoutSec) {
       timeout: timeoutSec * 1000,
       encoding: 'utf-8',
       maxBuffer: 50 * 1024 * 1024,
+      shell: true,
     }, (err, stdout, stderr) => {
       if (err) {
         reject(new Error(`Codex 执行失败: ${err.message}\n${stderr?.slice(-500) || ''}`))
