@@ -197,7 +197,8 @@ async function handleMessage(event) {
     }
 
     // 3. 发送"处理中"提示
-    await sendText(creds, chatId, `🎨 收到！正在为你生成图片...\n📝 需求：${userText || '(基于参考图生成)'}`)
+    const timeHint = PROVIDER === 'codex' ? '\n⏱️ 预计需要 2~3 分钟' : ''
+    await sendText(creds, chatId, `🎨 收到！正在为你生成图片...${timeHint}\n📝 需求：${userText || '(基于参考图生成)'}`)
 
     // 4. GPT 推理分析需求
     log(`🧠 GPT 推理中... provider=${PROVIDER}`)
