@@ -7,7 +7,8 @@
 //   → GPT Image 2.0 / Seedream 生图 → 发图回群
 //
 // 使用：
-//   node bot.mjs                # 启动（默认 openai provider）
+//   node bot.mjs                # 启动（默认 codex，走 ChatGPT 订阅）
+//   node bot.mjs --openai       # 走 OpenAI API
 //   node bot.mjs --ark          # 测试模式（火山方舟）
 //   node bot.mjs --verbose      # 详细日志
 // ============================================================
@@ -18,7 +19,8 @@ import { fileURLToPath } from 'node:url'
 import * as lark from '@larksuiteoapi/node-sdk'
 import { initFeishu, sendText, sendImage, uploadImage, downloadImage } from './feishu.mjs'
 import { analyzeRequest } from './analyzer.mjs'
-import { generateImage } from './painter.mjs'
+import { generateImage as generateImageAPI } from './painter.mjs'
+import { generateImage as generateImageCodex } from './painter-codex.mjs'
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
 
@@ -35,7 +37,8 @@ if (existsSync(envPath)) {
 const argv = process.argv.slice(2)
 const VERBOSE = argv.includes('--verbose')
 const USE_ARK = argv.includes('--ark')
-const PROVIDER = USE_ARK ? 'ark' : 'openai'
+const USE_OPENAI = argv.includes('--openai')
+const PROVIDER = USE_ARK ? 'ark' : USE_OPENAI ? 'openai' : 'codex'
 
 // ── 配置 ────────────────────────────────────────────────────
 const LARK_APP_ID = process.env.LARK_APP_ID
@@ -50,8 +53,9 @@ if (!LARK_APP_ID || !LARK_APP_SECRET) {
 }
 
 const apiKey = USE_ARK ? ARK_API_KEY : OPENAI_API_KEY
+// codex 模式下生图不需要 key，但 analyzer 推理层仍需要 API key
 if (!apiKey) {
-  console.error(`❌ 缺少 ${USE_ARK ? 'ARK_API_KEY' : 'OPENAI_API_KEY'}`)
+  console.error(`❌ 缺少 ${USE_ARK ? 'ARK_API_KEY' : 'OPENAI_API_KEY'}（analyzer 推理层需要）`)
   process.exit(1)
 }
 
@@ -163,7 +167,8 @@ async function handleMessage(event) {
 
     // 5. 生图
     log(`🖼️ 生图中... mode=${analysis.mode} provider=${PROVIDER}`)
-    const imageBuffer = await generateImage(apiKey, analysis, imageBuffers, { provider: PROVIDER, baseUrl: OPENAI_BASE_URL })
+    const genFn = PROVIDER === 'codex' ? generateImageCodex : generateImageAPI
+    const imageBuffer = await genFn(apiKey, analysis, imageBuffers, { provider: PROVIDER, baseUrl: OPENAI_BASE_URL })
 
     // 6. 上传到飞书 + 发送
     log(`📤 上传图片到飞书...`)
