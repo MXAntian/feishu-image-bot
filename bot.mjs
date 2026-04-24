@@ -18,7 +18,8 @@ import { resolve, dirname } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import * as lark from '@larksuiteoapi/node-sdk'
 import { initFeishu, sendText, sendImage, uploadImage, downloadImage } from './feishu.mjs'
-import { analyzeRequest } from './analyzer.mjs'
+import { analyzeRequest as analyzeRequestAPI } from './analyzer.mjs'
+import { analyzeRequest as analyzeRequestCodex } from './analyzer-codex.mjs'
 import { generateImage as generateImageAPI } from './painter.mjs'
 import { generateImage as generateImageCodex } from './painter-codex.mjs'
 
@@ -53,9 +54,8 @@ if (!LARK_APP_ID || !LARK_APP_SECRET) {
 }
 
 const apiKey = USE_ARK ? ARK_API_KEY : OPENAI_API_KEY
-// codex 模式下生图不需要 key，但 analyzer 推理层仍需要 API key
-if (!apiKey) {
-  console.error(`❌ 缺少 ${USE_ARK ? 'ARK_API_KEY' : 'OPENAI_API_KEY'}（analyzer 推理层需要）`)
+if (PROVIDER !== 'codex' && !apiKey) {
+  console.error(`❌ 缺少 ${USE_ARK ? 'ARK_API_KEY' : 'OPENAI_API_KEY'}`)
   process.exit(1)
 }
 
@@ -159,7 +159,8 @@ async function handleMessage(event) {
 
     // 4. GPT 推理分析需求
     log(`🧠 GPT 推理中... provider=${PROVIDER}`)
-    const analysis = await analyzeRequest(apiKey, userText, imageBase64List, { provider: PROVIDER, baseUrl: OPENAI_BASE_URL })
+    const analyzeFn = PROVIDER === 'codex' ? analyzeRequestCodex : analyzeRequestAPI
+    const analysis = await analyzeFn(apiKey, userText, imageBase64List, { provider: PROVIDER, baseUrl: OPENAI_BASE_URL })
 
     if (VERBOSE) log(`📋 分析结果: ${JSON.stringify(analysis)}`)
 
