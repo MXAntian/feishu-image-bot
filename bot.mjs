@@ -87,8 +87,8 @@ async function handleMessage(event) {
 
   if (isDuplicate(msgId)) return
 
-  // 只处理群消息中 @机器人的
-  if (msg.chat_type !== 'group') return
+  // 支持群消息（@机器人）和单聊
+  if (msg.chat_type !== 'group' && msg.chat_type !== 'p2p') return
 
   log(`📨 收到消息 type=${msgType} from=${senderId} chat=${chatId}`)
 
