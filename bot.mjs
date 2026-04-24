@@ -25,8 +25,8 @@ const __dirname = dirname(fileURLToPath(import.meta.url))
 // ── 加载 .env.local ────────────────────────────────────────
 const envPath = resolve(__dirname, '.env.local')
 if (existsSync(envPath)) {
-  readFileSync(envPath, 'utf-8').split('\n').forEach(line => {
-    const m = line.match(/^([A-Z_][A-Z0-9_]*)=(.*)$/)
+  readFileSync(envPath, 'utf-8').replace(/^\uFEFF/, '').split('\n').forEach(line => {
+    const m = line.trim().match(/^([A-Z_][A-Z0-9_]*)=(.*)$/)
     if (m && !process.env[m[1]]) process.env[m[1]] = m[2].trim()
   })
 }
