@@ -22,6 +22,7 @@ import { analyzeRequest as analyzeRequestAPI } from './analyzer.mjs'
 import { analyzeRequest as analyzeRequestCodex } from './analyzer-codex.mjs'
 import { generateImage as generateImageAPI } from './painter.mjs'
 import { generateImage as generateImageCodex } from './painter-codex.mjs'
+import { initSkills, listSkills } from './skills.mjs'
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
 
@@ -207,19 +208,55 @@ async function handleMessage(event) {
 
     if (VERBOSE) log(`📋 分析结果: ${JSON.stringify(analysis)}`)
 
-    await sendText(creds, chatId, `💡 理解：${analysis.summary}\n⏳ 正在生成图片...`)
+    // 4.1 needs_clarification → 反问，不生图
+    if (analysis.needs_clarification) {
+      const q = analysis.clarification_question || '需要再确认一下你的需求，能再描述清楚点吗？'
+      await sendText(creds, chatId, `🤔 ${q}`)
+      log(`⏸️  需要澄清，跳过生图`)
+      return
+    }
 
-    // 5. 生图
-    log(`🖼️ 生图中... mode=${analysis.mode} provider=${PROVIDER}`)
+    const outputs = analysis.outputs || []
+    if (outputs.length === 0) {
+      await sendText(creds, chatId, '⚠️ 推理结果为空，没法生图，请换个描述试试~')
+      log(`⏸️  outputs 为空，跳过`)
+      return
+    }
+
+    const multi = outputs.length > 1
+    await sendText(creds, chatId, `💡 理解：${analysis.summary}\n⏳ ${multi ? `将生成 ${outputs.length} 张对比图（JSON 版 + 自然语言版）` : '正在生成图片'}...`)
+
+    // 5. 循环生图（每个 output 一次）
     const genFn = PROVIDER === 'codex' ? generateImageCodex : generateImageAPI
-    const imageBuffer = await genFn(apiKey, analysis, imageBuffers, { provider: PROVIDER, baseUrl: OPENAI_BASE_URL })
+    let okCount = 0
+    for (let i = 0; i < outputs.length; i++) {
+      const out = outputs[i]
+      const label = out.format === 'json' ? 'JSON 版' : (out.format === 'plain' ? '自然语言版' : `第 ${i+1} 版`)
+      log(`🖼️ 生图 ${i+1}/${outputs.length} (${label}) mode=${out.mode}`)
+      try {
+        // 把 outputs[i] 摊平成 painter 期望的 analysis 格式
+        const subAnalysis = {
+          mode: out.mode,
+          prompt: out.prompt,
+          negative_prompt: out.negative_prompt || '',
+          summary: analysis.summary,
+        }
+        const imageBuffer = await genFn(apiKey, subAnalysis, imageBuffers, { provider: PROVIDER, baseUrl: OPENAI_BASE_URL })
+        log(`📤 上传图 ${i+1}/${outputs.length} 到飞书...`)
+        const imageKey = await uploadImage(creds, imageBuffer)
+        if (multi) {
+          await sendText(creds, chatId, `📦 ${label}${out.filename_suffix ? ` (${out.filename_suffix})` : ''}：`)
+        }
+        await sendImage(creds, chatId, imageKey)
+        okCount++
+        log(`✅ 完成 ${i+1}/${outputs.length}！image_key=${imageKey}`)
+      } catch (innerErr) {
+        log(`❌ 第 ${i+1} 版生图失败: ${innerErr.message}`)
+        await sendText(creds, chatId, `❌ ${label}生成失败：${innerErr.message}`)
+      }
+    }
 
-    // 6. 上传到飞书 + 发送
-    log(`📤 上传图片到飞书...`)
-    const imageKey = await uploadImage(creds, imageBuffer)
-    await sendImage(creds, chatId, imageKey)
-
-    log(`✅ 完成！image_key=${imageKey}`)
+    if (multi) log(`📊 多版生图完成 ${okCount}/${outputs.length}`)
 
   } catch (err) {
     log(`❌ 处理失败: ${err.message}`)
@@ -257,6 +294,18 @@ function main() {
   log(`🚀 太空杀飞书生图机器人启动`)
   log(`   Provider: ${PROVIDER}`)
   log(`   Verbose: ${VERBOSE}`)
+
+  // 加载 skills + 启动 watcher（热加载）
+  const skillsDir = resolve(__dirname, 'skills')
+  initSkills({ dir: skillsDir, log: (msg) => log(msg) })
+  const skills = listSkills()
+  if (skills.length > 0) {
+    for (const s of skills) {
+      log(`   ↳ skill: ${s.name}${s.description ? ' — ' + s.description.slice(0, 60) : ''}`)
+    }
+  } else {
+    log(`   ↳ skill: (none) — analyzer 将走基础 prompt`)
+  }
 
   startWSClient()
 }

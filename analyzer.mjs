@@ -1,39 +1,63 @@
 // ============================================================
-// GPT 推理层 — 分析需求 + 生成生图 prompt
+// GPT 推理层 — 分析需求 + 生成生图 prompt（OpenAI / Ark API 模式）
+//
+// v2: 加载 skills/ 注入 system prompt；输出 schema 改成 outputs 数组，
+//     支持 skill 要求的多版（JSON + 自然语言）输出与 needs_clarification 反问。
 // ============================================================
 
-const SYSTEM_PROMPT = `你是一个专业的AI生图提示词优化师。
+import { getSkillsPromptBlock } from './skills.mjs'
+
+const BASE_SYSTEM_PROMPT = `你是一个专业的 AI 生图提示词优化师。
 用户会给你一段生图需求（可能附带参考图片），你需要：
 
-1. 理解用户的真实意图
-2. 生成一段优化后的提示词，用于 GPT Image 2.0 / Seedream 生图
-3. 判断这是"文生图"还是"图生图"任务
+1. 理解用户的真实意图。
+2. 严格遵循下方"已加载 Skills"段落里每个 skill 的指令、清单、模板与硬性规则。
+3. 按 skill 要求决定输出几版 prompt（每一版对应一次生图调用）。
+4. 当用户的意图不明确（典型场景：skill 中要求"必须先反问"），不要直接生图，把 needs_clarification 设为 true 并填 clarification_question。
 
-输出格式（严格JSON）：
+输出格式（严格 JSON，不要用 markdown 代码块包裹）：
+
 {
-  "mode": "text2img" | "img2img",
-  "prompt": "优化后的生图提示词",
-  "negative_prompt": "负面提示词（可选，如果需要）",
-  "summary": "一句话中文总结你理解的需求"
+  "summary": "一句话中文总结你理解的需求",
+  "needs_clarification": false,
+  "clarification_question": "",
+  "outputs": [
+    {
+      "mode": "text2img" | "img2img" | "image_edit",
+      "format": "json" | "plain",
+      "filename_suffix": "_json" | "_plain" | "",
+      "prompt": "最终发给生图模型的提示词（JSON 版就是 JSON 字符串，plain 版就是自然语言）",
+      "negative_prompt": "可选，仅 plain 版用得到"
+    }
+  ]
 }
 
-注意：
-- 提示词语言自行判断：如果需求涉及中文文字渲染/中文场景，用中文提示词；其他情况英文效果更好
-- 如果用户提供了参考图，mode 应为 img2img
-- 提示词要具体、有画面感，包含风格/构图/光影等细节
-- 不要解释，直接输出 JSON`
+通用约束：
+- 单纯改图 → outputs 1 个，format 由 skill 决定（默认 json）。
+- 生图 + 有参考图 → 按 skill 要求输出 2 个（一个 json 一个 plain）。
+- 生图 + 无参考图 → outputs 1 个，format=plain。
+- 提示词语言：中文场景/中文文字渲染用中文，其他英文。
+- needs_clarification=true 时 outputs 可以是空数组 []。
+- 不要解释、不要 markdown、直接输出 JSON。`
+
+function buildSystemPrompt() {
+  const skillsBlock = getSkillsPromptBlock()
+  if (!skillsBlock) return BASE_SYSTEM_PROMPT
+  return BASE_SYSTEM_PROMPT + '\n\n' + skillsBlock
+}
 
 /**
  * 调用 GPT 推理分析用户需求
- * @param {string} apiKey - OpenAI API key（测试阶段用火山方舟 key）
+ * @param {string} apiKey - OpenAI API key（或火山方舟 key）
  * @param {string} userText - 用户的文字需求
  * @param {string[]} imageBase64List - 用户附带的图片（base64 编码）
- * @param {object} options - { provider: 'openai' | 'ark' }
+ * @param {object} options - { provider: 'openai' | 'ark', baseUrl, chatModel }
+ * @returns {Promise<{summary, needs_clarification, clarification_question, outputs: Array}>}
  */
 export async function analyzeRequest(apiKey, userText, imageBase64List = [], options = {}) {
   const provider = options.provider || 'openai'
 
-  // 构造消息内容
+  // user content 构造
   const content = []
   content.push({ type: 'text', text: userText || '请根据附图生成类似风格的图片' })
   for (const b64 of imageBase64List) {
@@ -43,8 +67,10 @@ export async function analyzeRequest(apiKey, userText, imageBase64List = [], opt
     })
   }
 
+  const systemPrompt = buildSystemPrompt()
+
   const messages = [
-    { role: 'system', content: SYSTEM_PROMPT },
+    { role: 'system', content: systemPrompt },
     { role: 'user', content },
   ]
 
@@ -64,7 +90,6 @@ export async function analyzeRequest(apiKey, userText, imageBase64List = [], opt
       temperature: 0.3,
     }
   } else {
-    // OpenAI（支持自定义 base URL）
     url = `${baseUrl}/v1/chat/completions`
     headers = {
       'Content-Type': 'application/json',
@@ -92,11 +117,70 @@ export async function analyzeRequest(apiKey, userText, imageBase64List = [], opt
   const j = await r.json()
   const raw = j.choices?.[0]?.message?.content || ''
 
+  let parsed
   try {
-    // 尝试提取 JSON（可能被 markdown 包裹）
     const jsonMatch = raw.match(/\{[\s\S]*\}/)
-    return JSON.parse(jsonMatch ? jsonMatch[0] : raw)
+    parsed = JSON.parse(jsonMatch ? jsonMatch[0] : raw)
   } catch (e) {
     throw new Error(`GPT 返回解析失败: ${raw.slice(0, 200)}`)
   }
+
+  return normalizeAnalysis(parsed)
 }
+
+/**
+ * 兼容旧 schema（mode + prompt 平铺）→ 新 schema（outputs 数组）
+ * 让本模块 + analyzer-codex.mjs 共用一份归一化逻辑
+ */
+export function normalizeAnalysis(raw) {
+  if (!raw || typeof raw !== 'object') {
+    throw new Error('analyzer 返回非法 JSON')
+  }
+
+  const summary = raw.summary || ''
+  const needs_clarification = !!raw.needs_clarification
+  const clarification_question = raw.clarification_question || ''
+
+  // 已经是新 schema
+  if (Array.isArray(raw.outputs)) {
+    return {
+      summary,
+      needs_clarification,
+      clarification_question,
+      outputs: raw.outputs.map(o => ({
+        mode: o.mode || 'text2img',
+        format: o.format || 'plain',
+        filename_suffix: o.filename_suffix || '',
+        prompt: o.prompt || '',
+        negative_prompt: o.negative_prompt || '',
+      })).filter(o => o.prompt),
+    }
+  }
+
+  // 旧 schema 兼容：{ mode, prompt, negative_prompt, summary }
+  if (raw.prompt) {
+    return {
+      summary,
+      needs_clarification,
+      clarification_question,
+      outputs: [{
+        mode: raw.mode || 'text2img',
+        format: 'plain',
+        filename_suffix: '',
+        prompt: raw.prompt,
+        negative_prompt: raw.negative_prompt || '',
+      }],
+    }
+  }
+
+  // needs_clarification=true 时 outputs 可以为空
+  return {
+    summary,
+    needs_clarification,
+    clarification_question,
+    outputs: [],
+  }
+}
+
+// 导出 buildSystemPrompt 给 codex 版复用
+export { buildSystemPrompt }
