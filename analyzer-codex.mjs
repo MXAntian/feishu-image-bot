@@ -9,22 +9,23 @@ import { execFile } from 'node:child_process'
 import { join } from 'node:path'
 import { statSync, writeFileSync, unlinkSync } from 'node:fs'
 import { tmpdir } from 'node:os'
-import { buildSystemPrompt, normalizeAnalysis } from './analyzer.mjs'
+import { buildSystemPrompt, normalizeAnalysis, buildFlattenNotice } from './analyzer.mjs'
 
 /**
  * 通过 Codex CLI 推理分析用户需求
  * @param {string} _apiKey - 不使用（codex 走自己的 auth）
  * @param {string} userText - 用户的文字需求
  * @param {string[]} imageBase64List - 用户附带的图片（base64）
- * @param {object} options - { timeoutSec }
+ * @param {object} options - { timeoutSec, refsFlattened, flattenBg }
  */
 export async function analyzeRequest(_apiKey, userText, imageBase64List = [], options = {}) {
   const timeoutSec = options.timeoutSec || 180  // skill 加大后 system prompt 更长，给 3min
   const codexExe = resolveCodex()
 
-  // 构造 instruction：system prompt + 用户需求
+  // 构造 instruction：system prompt + 用户需求 + flatten notice
   let instruction = buildSystemPrompt() + '\n\n---\n\n用户需求：\n'
   instruction += userText || '请根据附图生成类似风格的图片'
+  instruction += buildFlattenNotice(options.refsFlattened, options.flattenBg)
 
   if (imageBase64List.length > 0) {
     instruction += `\n\n（用户附带了 ${imageBase64List.length} 张参考图片）`

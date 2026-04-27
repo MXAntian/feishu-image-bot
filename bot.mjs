@@ -23,6 +23,7 @@ import { analyzeRequest as analyzeRequestCodex } from './analyzer-codex.mjs'
 import { generateImage as generateImageAPI } from './painter.mjs'
 import { generateImage as generateImageCodex } from './painter-codex.mjs'
 import { initSkills, listSkills } from './skills.mjs'
+import { maybeFlattenAlpha } from './flatten-alpha.mjs'
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
 
@@ -165,16 +166,13 @@ async function handleMessage(event) {
     }
 
     // 2. 提取图片（如果有）
-    const imageBuffers = []
-    const imageBase64List = []
+    const rawImageBuffers = []
 
     if (msgType === 'image') {
       const content = JSON.parse(msg.content || '{}')
       const imageKey = content.image_key
       if (imageKey) {
-        const buf = await downloadImage(creds, msgId, imageKey)
-        imageBuffers.push(buf)
-        imageBase64List.push(buf.toString('base64'))
+        rawImageBuffers.push(await downloadImage(creds, msgId, imageKey))
       }
     }
 
@@ -184,12 +182,26 @@ async function handleMessage(event) {
       for (const para of paragraphs) {
         for (const elem of (para || [])) {
           if (elem.tag === 'img' && elem.image_key) {
-            const buf = await downloadImage(creds, msgId, elem.image_key)
-            imageBuffers.push(buf)
-            imageBase64List.push(buf.toString('base64'))
+            rawImageBuffers.push(await downloadImage(creds, msgId, elem.image_key))
           }
         }
       }
+    }
+
+    // 2.5 透明 PNG 预处理：GPT Image 2 会把透明区识别成"风格化色块"，
+    // 输出背景被花花色块污染。发给模型前压平到环境配的纯色（默认白）。
+    const FLATTEN_BG = process.env.REF_FLATTEN_BG || '#ffffff'
+    const imageBuffers = []
+    const imageBase64List = []
+    let anyFlattened = false
+    for (const raw of rawImageBuffers) {
+      const { buf, flattened } = maybeFlattenAlpha(raw, { bg: FLATTEN_BG })
+      imageBuffers.push(buf)
+      imageBase64List.push(buf.toString('base64'))
+      if (flattened) anyFlattened = true
+    }
+    if (anyFlattened) {
+      log(`🧽 检测到透明 PNG 参考图，已压平到 ${FLATTEN_BG} 底（防 GPT Image 色块污染）`)
     }
 
     if (!userText && imageBase64List.length === 0) {
@@ -204,7 +216,13 @@ async function handleMessage(event) {
     // 4. GPT 推理分析需求
     log(`🧠 GPT 推理中... provider=${PROVIDER}`)
     const analyzeFn = PROVIDER === 'codex' ? analyzeRequestCodex : analyzeRequestAPI
-    const analysis = await analyzeFn(apiKey, userText, imageBase64List, { provider: PROVIDER, baseUrl: OPENAI_BASE_URL })
+    const analysis = await analyzeFn(apiKey, userText, imageBase64List, {
+      provider: PROVIDER,
+      baseUrl: OPENAI_BASE_URL,
+      // 告诉 analyzer：参考图被压成纯底了，让它在生图 prompt 里说明"那个底色不是想要的背景"
+      refsFlattened: anyFlattened,
+      flattenBg: FLATTEN_BG,
+    })
 
     if (VERBOSE) log(`📋 分析结果: ${JSON.stringify(analysis)}`)
 

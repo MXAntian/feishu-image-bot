@@ -47,19 +47,42 @@ function buildSystemPrompt() {
 }
 
 /**
+ * 拼装 flatten 注解（告诉 LLM 参考图被预处理过，不要把纯色底当成"想要的背景"）
+ * @param {boolean} refsFlattened
+ * @param {string} flattenBg
+ * @returns {string}
+ */
+export function buildFlattenNotice(refsFlattened, flattenBg = '#ffffff') {
+  if (!refsFlattened) return ''
+  return [
+    '',
+    '⚠️ 参考图预处理说明：',
+    `用户原图是带透明背景的 PNG，已经被预处理成纯色 ${flattenBg} 底（避免 GPT Image 把透明区识别成"风格化彩色色块"）。`,
+    `这个 ${flattenBg} 区域不是用户想要的背景，只是占位 — 在你输出的 prompt 里务必明确：`,
+    '  - 不要把这个纯色当成"参考的背景"',
+    '  - 不要让生成图保留这个纯色背景',
+    '  - 只参考主体（非纯色区域）的造型/风格/颜色',
+    '  - 输出图的背景由用户文字需求决定（用户没说就默认干净简洁背景）',
+    '',
+  ].join('\n')
+}
+
+/**
  * 调用 GPT 推理分析用户需求
  * @param {string} apiKey - OpenAI API key（或火山方舟 key）
  * @param {string} userText - 用户的文字需求
  * @param {string[]} imageBase64List - 用户附带的图片（base64 编码）
- * @param {object} options - { provider: 'openai' | 'ark', baseUrl, chatModel }
+ * @param {object} options - { provider, baseUrl, chatModel, refsFlattened, flattenBg }
  * @returns {Promise<{summary, needs_clarification, clarification_question, outputs: Array}>}
  */
 export async function analyzeRequest(apiKey, userText, imageBase64List = [], options = {}) {
   const provider = options.provider || 'openai'
 
   // user content 构造
+  const flattenNotice = buildFlattenNotice(options.refsFlattened, options.flattenBg)
+  const userTextFinal = (userText || '请根据附图生成类似风格的图片') + flattenNotice
   const content = []
-  content.push({ type: 'text', text: userText || '请根据附图生成类似风格的图片' })
+  content.push({ type: 'text', text: userTextFinal })
   for (const b64 of imageBase64List) {
     content.push({
       type: 'image_url',

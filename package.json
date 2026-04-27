@@ -9,6 +9,7 @@
   },
   "dependencies": {
     "@larksuiteoapi/node-sdk": "^1.61.1",
+    "pngjs": "^7.0.0",
     "ws": "^8.20.0"
   }
 }
