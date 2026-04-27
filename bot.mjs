@@ -17,7 +17,7 @@ import { readFileSync, existsSync } from 'node:fs'
 import { resolve, dirname } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import * as lark from '@larksuiteoapi/node-sdk'
-import { initFeishu, sendText, sendImage, uploadImage, downloadImage } from './feishu.mjs'
+import { initFeishu, sendText, sendImage, uploadImage, downloadImage, getBotInfo } from './feishu.mjs'
 import { analyzeRequest as analyzeRequestAPI } from './analyzer.mjs'
 import { analyzeRequest as analyzeRequestCodex } from './analyzer-codex.mjs'
 import { generateImage as generateImageAPI } from './painter.mjs'
@@ -63,6 +63,9 @@ if (PROVIDER !== 'codex' && !apiKey) {
 
 const creds = initFeishu(LARK_APP_ID, LARK_APP_SECRET)
 
+// 机器人自身 open_id —— 启动时通过 /bot/v3/info 拉取并缓存，用于识别"是否被 @ 到"
+let BOT_OPEN_ID = null
+
 function log(msg) {
   console.log(`[${new Date().toISOString()}] ${msg}`)
 }
@@ -103,8 +106,28 @@ async function enqueueTask(event) {
 
   if (isDuplicate(msgId)) return
 
-  // 支持群消息（@机器人）和单聊
-  if (msg.chat_type !== 'group' && msg.chat_type !== 'p2p') return
+  // @ 触发判定：
+  //   - p2p（私聊）→ 直通，私聊本来就是定向给机器人
+  //   - group（群聊）→ 必须 mentions 里有一项 id.open_id === BOT_OPEN_ID 才响应
+  //                    @所有人（@_all）不会带具体 open_id，自动被屏蔽
+  //   - 其他 chat_type 一律忽略
+  if (msg.chat_type === 'p2p') {
+    // ok, 直通
+  } else if (msg.chat_type === 'group') {
+    if (!BOT_OPEN_ID) {
+      log(`⚠️  群消息但未知机器人 open_id，跳过（启动时 getBotInfo 可能失败了）`)
+      return
+    }
+    const mentions = Array.isArray(msg.mentions) ? msg.mentions : []
+    const mentionedMe = mentions.some(m => m?.id?.open_id === BOT_OPEN_ID)
+    if (!mentionedMe) {
+      const keys = mentions.map(m => m?.key || '?').join(',') || 'none'
+      log(`⏭️  群消息未 @ 机器人，忽略 (mentions=[${keys}])`)
+      return
+    }
+  } else {
+    return
+  }
 
   const queueLen = getQueueLength()
   if (queueLen > 0) {
@@ -308,10 +331,23 @@ function startWSClient() {
 }
 
 // ── 启动 ────────────────────────────────────────────────────
-function main() {
+async function main() {
   log(`🚀 太空杀飞书生图机器人启动`)
   log(`   Provider: ${PROVIDER}`)
   log(`   Verbose: ${VERBOSE}`)
+
+  // 拉取机器人自身 open_id —— 用于群聊里识别"是否被 @"
+  // 失败也不阻止启动（私聊还能用），但群聊会被 enqueueTask 跳过并打日志
+  try {
+    const botInfo = await getBotInfo(creds)
+    BOT_OPEN_ID = botInfo?.open_id || null
+    log(`🤖 机器人身份: ${botInfo?.app_name || '(unknown)'} open_id=${BOT_OPEN_ID || 'N/A'}`)
+    if (!BOT_OPEN_ID) {
+      log(`⚠️  bot/v3/info 返回了，但没拿到 open_id，群聊里所有消息都会被忽略`)
+    }
+  } catch (e) {
+    log(`⚠️  getBotInfo 失败，群聊里的 @ 触发判定会失效（消息会被忽略）: ${e.message}`)
+  }
 
   // 加载 skills + 启动 watcher（热加载）
   const skillsDir = resolve(__dirname, 'skills')
@@ -328,4 +364,7 @@ function main() {
   startWSClient()
 }
 
-main()
+main().catch(e => {
+  console.error('❌ 启动失败:', e)
+  process.exit(1)
+})

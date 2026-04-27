@@ -27,6 +27,17 @@ export async function getTenantToken(creds) {
   return _tenantToken
 }
 
+// ── 获取机器人自身信息（用于识别是否被 @）───────────────────
+export async function getBotInfo(creds) {
+  const token = await getTenantToken(creds)
+  const r = await fetch('https://open.feishu.cn/open-apis/bot/v3/info', {
+    headers: { Authorization: `Bearer ${token}` },
+  })
+  const j = await r.json()
+  if (j.code !== 0) throw new Error(`bot/v3/info failed: ${j.msg}`)
+  return j.bot  // { open_id, app_name, avatar_url, ... }
+}
+
 // ── 发送文本消息 ────────────────────────────────────────────
 export async function sendText(creds, chatId, text, replyMsgId = null) {
   const token = await getTenantToken(creds)
