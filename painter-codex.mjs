@@ -139,11 +139,17 @@ function runCodex(codexExe, instruction, refPaths, timeoutSec) {
       args.push('-i', ref)
     }
 
-    const proc = execFile(codexExe, args, {
+    // v2.1 修 DEP0190：Node 22+ 不让 args 数组 + shell:true 共存。
+    // Windows .cmd / .bat 显式走 cmd.exe /c，shell:false，args 安全传递。
+    const isWindowsCmd = process.platform === 'win32' && /\.(cmd|bat)$/i.test(codexExe)
+    const exe = isWindowsCmd ? 'cmd.exe' : codexExe
+    const finalArgs = isWindowsCmd ? ['/c', codexExe, ...args] : args
+
+    const proc = execFile(exe, finalArgs, {
       timeout: timeoutSec * 1000,
       encoding: 'utf-8',
       maxBuffer: 50 * 1024 * 1024,
-      shell: true,
+      windowsHide: true,
     }, (err, stdout, stderr) => {
       if (err) {
         reject(new Error(`Codex 执行失败: ${err.message}\n${stderr?.slice(-500) || ''}`))
