@@ -24,8 +24,10 @@ import { generateImage as generateImageAPI } from './painter.mjs'
 import { generateImage as generateImageCodex } from './painter-codex.mjs'
 import { initSkills, listSkills } from './skills.mjs'
 import { maybeFlattenAlpha } from './flatten-alpha.mjs'
-import { generateAssets, listPlatforms } from './assets-resize/index.mjs'
+import { resolveKeys, listPlatforms } from './assets-resize/specs.mjs'
+import { buildEditPrompt, buildGeneratePrompt } from './assets-resize/prompts.mjs'
 import { SessionManager } from './session.mjs'
+import sharp from 'sharp'
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
 
@@ -320,44 +322,66 @@ async function handleMessage(event) {
 
       try {
         if (out.mode === 'platform-edit') {
-          // ── 平台尺寸延展：GPT Image edit + sharp 精确缩放 ──
-          if (imageBuffers.length === 0) {
-            throw new Error('需要参考图才能做平台尺寸延展')
+          // ── 平台尺寸延展（简化版）──
+          // 复用主链路 painter（codex/openai/ark），prompt 工程从 prompts.mjs 拿，
+          // sharp 精准 resize 兜底。零 OpenAI Image Edit / 平台 key 依赖。
+          const specs = resolveKeys(out.platforms)
+          if (specs.length === 0) {
+            throw new Error(`未识别的平台规格：${JSON.stringify(out.platforms)}`)
           }
-          // platform-edit 必走 OpenAI Images Edit；codex CLI 不支持自定义 size，
-          // 所以即便 PROVIDER=codex 也用 OPENAI_API_KEY 直连。
-          const assetsApiKey = process.env.OPENAI_API_KEY || apiKey
-          if (!assetsApiKey) {
-            throw new Error('platform-edit 需要 OPENAI_API_KEY 环境变量')
-          }
-          const { ok, total, results } = await generateAssets({
-            apiKey: assetsApiKey,
-            baseUrl: OPENAI_BASE_URL,
-            refImage: imageBuffers[0],
-            platforms: out.platforms,
-            scene: out.scene,
-            extraPrompt: out.extra_prompt,
-            quality: process.env.ASSETS_QUALITY || 'medium',
-            verify: !!out.verify,
-            log: (m) => log(m),
-          })
-          log(`📊 平台延展完成 ${ok}/${total}`)
-          for (const r of results) {
-            if (!r.success) {
-              await sendText(creds, chatId, `❌ ${r.name} 生成失败：${r.error}`)
-              continue
+          const refImage = imageBuffers[0] || null
+          log(`🎨 平台延展 ${specs.length} 个规格 (provider=${PROVIDER}, ref=${refImage ? 'yes' : 'no'})`)
+
+          for (const spec of specs) {
+            try {
+              const t0 = Date.now()
+              const platformPrompt = refImage
+                ? buildEditPrompt({
+                    platformName: spec.name,
+                    width: spec.width,
+                    height: spec.height,
+                    scene: out.scene || '',
+                    extra: out.extra_prompt || '',
+                    safeNote: spec.safe_note || '',
+                  })
+                : buildGeneratePrompt({
+                    platformName: spec.name,
+                    width: spec.width,
+                    height: spec.height,
+                    scene: out.scene || '',
+                  })
+              const subAnalysis = {
+                mode: refImage ? 'img2img' : 'text2img',
+                prompt: platformPrompt,
+                negative_prompt: '',
+                summary: analysis.summary,
+              }
+              log(`   [${spec._key}] ${spec.name} ${spec.width}×${spec.height}`)
+              const rawBuf = await genFn(
+                apiKey,
+                subAnalysis,
+                refImage ? [refImage] : [],
+                { provider: PROVIDER, baseUrl: OPENAI_BASE_URL },
+              )
+              // sharp 精准 resize 到目标尺寸（fit:cover 居中裁切）
+              const finalBuf = await sharp(rawBuf)
+                .resize(spec.width, spec.height, { fit: 'cover', position: 'center' })
+                .png()
+                .toBuffer()
+              const elapsedMs = Date.now() - t0
+              const imageKey = await uploadImage(creds, finalBuf)
+              await sendText(
+                creds, chatId,
+                `📦 ${spec.name} (${spec.width}×${spec.height}) · ${(elapsedMs / 1000).toFixed(1)}s · 已缩放至精确尺寸`,
+              )
+              await sendImage(creds, chatId, imageKey)
+              okCount++
+              lastSuccessImage = finalBuf
+              lastSuccessMode = 'platform-edit'
+            } catch (e) {
+              log(`   ↳ ✗ ${spec._key}: ${e.message}`)
+              await sendText(creds, chatId, `❌ ${spec.name} 生成失败：${e.message}`)
             }
-            const imageKey = await uploadImage(creds, r.buf)
-            let info = `📦 ${r.name} (${r.width}×${r.height}) · ${((r.elapsedMs || 0) / 1000).toFixed(1)}s`
-            if (r.resized) info += ' · 已缩放至精确尺寸'
-            if (r.verifyPassed === false && r.verifyIssues?.length) {
-              info += `\n⚠️ AI 自检：${r.verifyIssues.slice(0, 2).join(' / ')}`
-            }
-            await sendText(creds, chatId, info)
-            await sendImage(creds, chatId, imageKey)
-            okCount++
-            lastSuccessImage = r.buf
-            lastSuccessMode = 'platform-edit'
           }
           continue
         }
@@ -440,7 +464,7 @@ async function main() {
   log(`   Provider: ${PROVIDER}`)
   log(`   Verbose: ${VERBOSE}`)
   log(`   Session: TTL=${SESSION_TTL_MIN}min · max=${SESSION_MAX} · key=chat:sender · 重置词=/new /reset 新主题 重新开始 ...`)
-  log(`   Assets: ${listPlatforms().length} 平台规格 · GPT Image edit + sharp 精确缩放 · ASSETS_QUALITY=${process.env.ASSETS_QUALITY || 'medium'}`)
+  log(`   Assets: ${listPlatforms().length} 平台规格 · 主链路 painter + sharp 精确缩放 (零 OpenAI Image Edit 依赖)`)
   sessions.startSweeper(60_000)
 
   // 拉取机器人自身 open_id —— 用于群聊里识别"是否被 @"
