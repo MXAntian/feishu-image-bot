@@ -24,7 +24,7 @@ import { generateImage as generateImageAPI } from './painter.mjs'
 import { generateImage as generateImageCodex } from './painter-codex.mjs'
 import { initSkills, listSkills } from './skills.mjs'
 import { maybeFlattenAlpha } from './flatten-alpha.mjs'
-import { resizeImage, describeResize } from './resizer.mjs'
+import { generateAssets, listPlatforms } from './assets-resize/index.mjs'
 import { SessionManager } from './session.mjs'
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
@@ -304,7 +304,7 @@ async function handleMessage(event) {
     const multi = outputs.length > 1
     await sendText(creds, chatId, `💡 理解：${analysis.summary}\n⏳ ${multi ? `将生成 ${outputs.length} 张对比图（JSON 版 + 自然语言版）` : '正在生成图片'}...`)
 
-    // 5. 循环生图（每个 output 一次）
+    // 5. 循环生图（每个 output 一次；platform-edit 单 output 内多图）
     const genFn = PROVIDER === 'codex' ? generateImageCodex : generateImageAPI
     let okCount = 0
     let lastSuccessImage = null   // 用于写回 session（取最后一次成功的）
@@ -312,44 +312,69 @@ async function handleMessage(event) {
     for (let i = 0; i < outputs.length; i++) {
       const out = outputs[i]
       let label
-      if (out.mode === 'resize') label = '尺寸调整版'
+      if (out.mode === 'platform-edit') label = '平台延展'
       else if (out.format === 'json') label = 'JSON 版'
       else if (out.format === 'plain') label = '自然语言版'
       else label = `第 ${i+1} 版`
       log(`🖼️ 生成 ${i+1}/${outputs.length} (${label}) mode=${out.mode}`)
-      try {
-        let imageBuffer
-        let extraInfo = ''
 
-        if (out.mode === 'resize') {
-          // ── 本地像素 resize（绕过 GPT Image）──
+      try {
+        if (out.mode === 'platform-edit') {
+          // ── 平台尺寸延展：GPT Image edit + sharp 精确缩放 ──
           if (imageBuffers.length === 0) {
-            throw new Error('resize 需要参考图，但当前没有可用的图')
+            throw new Error('需要参考图才能做平台尺寸延展')
           }
-          // 用第一张参考图（用户传的或上一轮的生成图）
-          const t0 = Date.now()
-          const result = await resizeImage(imageBuffers[0], {
-            size: out.size,
-            fit: out.fit || 'cover',
+          // platform-edit 必走 OpenAI Images Edit；codex CLI 不支持自定义 size，
+          // 所以即便 PROVIDER=codex 也用 OPENAI_API_KEY 直连。
+          const assetsApiKey = process.env.OPENAI_API_KEY || apiKey
+          if (!assetsApiKey) {
+            throw new Error('platform-edit 需要 OPENAI_API_KEY 环境变量')
+          }
+          const { ok, total, results } = await generateAssets({
+            apiKey: assetsApiKey,
+            baseUrl: OPENAI_BASE_URL,
+            refImage: imageBuffers[0],
+            platforms: out.platforms,
+            scene: out.scene,
+            extraPrompt: out.extra_prompt,
+            quality: process.env.ASSETS_QUALITY || 'medium',
+            verify: !!out.verify,
+            log: (m) => log(m),
           })
-          imageBuffer = result.buf
-          extraInfo = ` ${describeResize(result.info)} (${Date.now() - t0}ms)`
-          log(`✂️  本地 resize 完成${extraInfo}`)
-        } else {
-          // ── 走 GPT Image 生图 ──
-          const subAnalysis = {
-            mode: out.mode,
-            prompt: out.prompt,
-            negative_prompt: out.negative_prompt || '',
-            summary: analysis.summary,
+          log(`📊 平台延展完成 ${ok}/${total}`)
+          for (const r of results) {
+            if (!r.success) {
+              await sendText(creds, chatId, `❌ ${r.name} 生成失败：${r.error}`)
+              continue
+            }
+            const imageKey = await uploadImage(creds, r.buf)
+            let info = `📦 ${r.name} (${r.width}×${r.height}) · ${((r.elapsedMs || 0) / 1000).toFixed(1)}s`
+            if (r.resized) info += ' · 已缩放至精确尺寸'
+            if (r.verifyPassed === false && r.verifyIssues?.length) {
+              info += `\n⚠️ AI 自检：${r.verifyIssues.slice(0, 2).join(' / ')}`
+            }
+            await sendText(creds, chatId, info)
+            await sendImage(creds, chatId, imageKey)
+            okCount++
+            lastSuccessImage = r.buf
+            lastSuccessMode = 'platform-edit'
           }
-          imageBuffer = await genFn(apiKey, subAnalysis, imageBuffers, { provider: PROVIDER, baseUrl: OPENAI_BASE_URL })
+          continue
         }
+
+        // ── 走 GPT Image 生图（text2img / img2img / image_edit）──
+        const subAnalysis = {
+          mode: out.mode,
+          prompt: out.prompt,
+          negative_prompt: out.negative_prompt || '',
+          summary: analysis.summary,
+        }
+        const imageBuffer = await genFn(apiKey, subAnalysis, imageBuffers, { provider: PROVIDER, baseUrl: OPENAI_BASE_URL })
 
         log(`📤 上传图 ${i+1}/${outputs.length} 到飞书...`)
         const imageKey = await uploadImage(creds, imageBuffer)
-        if (multi || out.mode === 'resize') {
-          await sendText(creds, chatId, `📦 ${label}${out.filename_suffix ? ` (${out.filename_suffix})` : ''}${extraInfo}`)
+        if (multi) {
+          await sendText(creds, chatId, `📦 ${label}${out.filename_suffix ? ` (${out.filename_suffix})` : ''}`)
         }
         await sendImage(creds, chatId, imageKey)
         okCount++
@@ -415,6 +440,7 @@ async function main() {
   log(`   Provider: ${PROVIDER}`)
   log(`   Verbose: ${VERBOSE}`)
   log(`   Session: TTL=${SESSION_TTL_MIN}min · max=${SESSION_MAX} · key=chat:sender · 重置词=/new /reset 新主题 重新开始 ...`)
+  log(`   Assets: ${listPlatforms().length} 平台规格 · GPT Image edit + sharp 精确缩放 · ASSETS_QUALITY=${process.env.ASSETS_QUALITY || 'medium'}`)
   sessions.startSweeper(60_000)
 
   // 拉取机器人自身 open_id —— 用于群聊里识别"是否被 @"

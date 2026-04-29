@@ -1,0 +1,634 @@
+{
+  "PLATFORM_SPECS": {
+    "wechat-cover": {
+      "name": "微信公众号封面",
+      "width": 900,
+      "height": 383,
+      "safe_area": {
+        "top": 0,
+        "bottom": 50,
+        "left": 0,
+        "right": 0
+      },
+      "safe_note": "底部50px被标题覆盖，核心内容放在0-333px区域",
+      "format": [
+        "jpeg",
+        "png"
+      ],
+      "max_size_mb": 10,
+      "ratio": "900:383"
+    },
+    "wechat-square": {
+      "name": "公众号方形缩略图",
+      "width": 300,
+      "height": 300,
+      "safe_area": {
+        "top": 0,
+        "bottom": 0,
+        "left": 0,
+        "right": 0
+      },
+      "format": [
+        "jpeg",
+        "png"
+      ],
+      "max_size_mb": 10,
+      "ratio": "1:1",
+      "note": "自动从一级封面裁剪中心区域"
+    },
+    "wechat-moments-portrait": {
+      "name": "朋友圈竖版海报",
+      "width": 1080,
+      "height": 1920,
+      "safe_area": {
+        "top": 50,
+        "bottom": 100,
+        "left": 30,
+        "right": 30
+      },
+      "format": [
+        "jpeg",
+        "png"
+      ],
+      "max_size_mb": 10,
+      "ratio": "9:16"
+    },
+    "wechat-moments-square": {
+      "name": "朋友圈方版海报",
+      "width": 1080,
+      "height": 1080,
+      "safe_area": {
+        "top": 30,
+        "bottom": 30,
+        "left": 30,
+        "right": 30
+      },
+      "format": [
+        "jpeg",
+        "png"
+      ],
+      "max_size_mb": 10,
+      "ratio": "1:1"
+    },
+    "xiaohongshu-cover": {
+      "name": "小红书笔记封面",
+      "width": 1242,
+      "height": 1660,
+      "safe_area": {
+        "top": 50,
+        "bottom": 100,
+        "left": 40,
+        "right": 40
+      },
+      "format": [
+        "jpeg",
+        "png"
+      ],
+      "max_size_mb": 10,
+      "ratio": "3:4",
+      "note": "最推荐比例，封面文字3-8字最佳"
+    },
+    "xiaohongshu-square": {
+      "name": "小红书方版封面",
+      "width": 1080,
+      "height": 1080,
+      "safe_area": {
+        "top": 30,
+        "bottom": 30,
+        "left": 30,
+        "right": 30
+      },
+      "format": [
+        "jpeg",
+        "png"
+      ],
+      "max_size_mb": 10,
+      "ratio": "1:1"
+    },
+    "douyin-cover": {
+      "name": "抖音视频封面",
+      "width": 1080,
+      "height": 1920,
+      "safe_area": {
+        "top": 50,
+        "bottom": 150,
+        "left": 50,
+        "right": 50
+      },
+      "safe_note": "底部区域被标题/按钮遮挡，核心安全区为画面中心60%（540×1152）",
+      "format": [
+        "jpeg",
+        "png"
+      ],
+      "max_size_mb": 10,
+      "ratio": "9:16"
+    },
+    "weibo-horizontal": {
+      "name": "微博横版配图",
+      "width": 1200,
+      "height": 675,
+      "safe_area": {
+        "top": 20,
+        "bottom": 20,
+        "left": 30,
+        "right": 30
+      },
+      "format": [
+        "jpeg",
+        "png"
+      ],
+      "max_size_mb": 10,
+      "ratio": "16:9"
+    },
+    "weibo-square": {
+      "name": "微博方版配图",
+      "width": 1200,
+      "height": 1200,
+      "safe_area": {
+        "top": 30,
+        "bottom": 30,
+        "left": 30,
+        "right": 30
+      },
+      "format": [
+        "jpeg",
+        "png"
+      ],
+      "max_size_mb": 10,
+      "ratio": "1:1"
+    },
+    "weibo-vertical": {
+      "name": "微博竖版配图",
+      "width": 1200,
+      "height": 1500,
+      "safe_area": {
+        "top": 30,
+        "bottom": 50,
+        "left": 30,
+        "right": 30
+      },
+      "format": [
+        "jpeg",
+        "png"
+      ],
+      "max_size_mb": 10,
+      "ratio": "4:5"
+    },
+    "video-cover": {
+      "name": "视频号封面",
+      "width": 1080,
+      "height": 1080,
+      "safe_area": {
+        "top": 50,
+        "bottom": 100,
+        "left": 30,
+        "right": 30
+      },
+      "safe_note": "底部被视频标题遮挡，核心信息置于顶部",
+      "format": [
+        "jpeg",
+        "png"
+      ],
+      "max_size_mb": 10,
+      "ratio": "1:1"
+    },
+    "bilibili-cover": {
+      "name": "B站视频封面",
+      "width": 1146,
+      "height": 717,
+      "safe_area": {
+        "top": 20,
+        "bottom": 40,
+        "left": 30,
+        "right": 30
+      },
+      "format": [
+        "jpeg",
+        "png"
+      ],
+      "max_size_mb": 10,
+      "ratio": "16:10",
+      "note": "大字标题+高对比度风格"
+    },
+    "zhihu-cover": {
+      "name": "知乎封面",
+      "width": 1080,
+      "height": 1080,
+      "safe_area": {
+        "top": 30,
+        "bottom": 30,
+        "left": 30,
+        "right": 30
+      },
+      "format": [
+        "jpeg",
+        "png"
+      ],
+      "max_size_mb": 10,
+      "ratio": "1:1"
+    },
+    "taobao-main": {
+      "name": "淘宝商品主图",
+      "width": 800,
+      "height": 800,
+      "safe_area": {
+        "top": 20,
+        "bottom": 20,
+        "left": 20,
+        "right": 20
+      },
+      "format": [
+        "jpeg",
+        "png"
+      ],
+      "max_size_mb": 5,
+      "ratio": "1:1",
+      "note": "首图建议白底"
+    },
+    "kuaishou-cover": {
+      "name": "快手视频封面",
+      "width": 1080,
+      "height": 1920,
+      "safe_area": {
+        "top": 50,
+        "bottom": 150,
+        "left": 50,
+        "right": 50
+      },
+      "format": [
+        "jpeg",
+        "png"
+      ],
+      "max_size_mb": 10,
+      "ratio": "9:16"
+    },
+    "facebook-square": {
+      "name": "Facebook 方版贴文",
+      "width": 1200,
+      "height": 1200,
+      "safe_area": {
+        "top": 30,
+        "bottom": 30,
+        "left": 30,
+        "right": 30
+      },
+      "format": [
+        "jpeg",
+        "png"
+      ],
+      "max_size_mb": 10,
+      "ratio": "1:1"
+    },
+    "facebook-landscape": {
+      "name": "Facebook 横版贴文",
+      "width": 1200,
+      "height": 630,
+      "safe_area": {
+        "top": 20,
+        "bottom": 20,
+        "left": 30,
+        "right": 30
+      },
+      "format": [
+        "jpeg",
+        "png"
+      ],
+      "max_size_mb": 10,
+      "ratio": "40:21"
+    },
+    "facebook-cover": {
+      "name": "Facebook 封面照片",
+      "width": 1200,
+      "height": 628,
+      "safe_area": {
+        "top": 50,
+        "bottom": 50,
+        "left": 30,
+        "right": 30
+      },
+      "safe_note": "底部50px被头像和按钮遮挡",
+      "format": [
+        "jpeg",
+        "png"
+      ],
+      "max_size_mb": 10,
+      "ratio": "300:157"
+    },
+    "facebook-stories": {
+      "name": "Facebook 快拍",
+      "width": 1080,
+      "height": 1920,
+      "safe_area": {
+        "top": 100,
+        "bottom": 200,
+        "left": 40,
+        "right": 40
+      },
+      "format": [
+        "jpeg",
+        "png"
+      ],
+      "max_size_mb": 10,
+      "ratio": "9:16"
+    },
+    "instagram-square": {
+      "name": "Instagram 方版贴文",
+      "width": 1200,
+      "height": 1200,
+      "safe_area": {
+        "top": 30,
+        "bottom": 30,
+        "left": 30,
+        "right": 30
+      },
+      "format": [
+        "jpeg",
+        "png"
+      ],
+      "max_size_mb": 10,
+      "ratio": "1:1",
+      "note": "推荐 1080×1080 上传，安全区内放置核心内容"
+    },
+    "instagram-portrait": {
+      "name": "Instagram 竖版贴文",
+      "width": 630,
+      "height": 1200,
+      "safe_area": {
+        "top": 50,
+        "bottom": 100,
+        "left": 30,
+        "right": 30
+      },
+      "format": [
+        "jpeg",
+        "png"
+      ],
+      "max_size_mb": 10,
+      "ratio": "21:40"
+    },
+    "instagram-stories": {
+      "name": "Instagram 快拍",
+      "width": 1080,
+      "height": 1920,
+      "safe_area": {
+        "top": 150,
+        "bottom": 200,
+        "left": 30,
+        "right": 30
+      },
+      "safe_note": "顶部150px和底部200px被UI遮挡",
+      "format": [
+        "jpeg",
+        "png"
+      ],
+      "max_size_mb": 10,
+      "ratio": "9:16"
+    },
+    "twitter-square": {
+      "name": "X (Twitter) 方版贴文",
+      "width": 1200,
+      "height": 1200,
+      "safe_area": {
+        "top": 20,
+        "bottom": 20,
+        "left": 20,
+        "right": 20
+      },
+      "format": [
+        "jpeg",
+        "png"
+      ],
+      "max_size_mb": 10,
+      "ratio": "1:1"
+    },
+    "twitter-landscape": {
+      "name": "X (Twitter) 横版贴文",
+      "width": 1200,
+      "height": 900,
+      "safe_area": {
+        "top": 20,
+        "bottom": 20,
+        "left": 30,
+        "right": 30
+      },
+      "format": [
+        "jpeg",
+        "png"
+      ],
+      "max_size_mb": 10,
+      "ratio": "4:3"
+    },
+    "twitter-banner": {
+      "name": "X (Twitter) 封面横幅",
+      "width": 1500,
+      "height": 500,
+      "safe_area": {
+        "top": 20,
+        "bottom": 20,
+        "left": 40,
+        "right": 40
+      },
+      "format": [
+        "jpeg",
+        "png"
+      ],
+      "max_size_mb": 10,
+      "ratio": "3:1",
+      "note": "头像会遮挡左下角区域"
+    },
+    "twitter-instream": {
+      "name": "X (Twitter) 信息流图片",
+      "width": 1600,
+      "height": 900,
+      "safe_area": {
+        "top": 20,
+        "bottom": 20,
+        "left": 30,
+        "right": 30
+      },
+      "format": [
+        "jpeg",
+        "png"
+      ],
+      "max_size_mb": 10,
+      "ratio": "16:9"
+    },
+    "pinterest-pin": {
+      "name": "Pinterest 图钉",
+      "width": 1000,
+      "height": 1500,
+      "safe_area": {
+        "top": 50,
+        "bottom": 100,
+        "left": 30,
+        "right": 30
+      },
+      "format": [
+        "jpeg",
+        "png"
+      ],
+      "max_size_mb": 10,
+      "ratio": "2:3",
+      "note": "竖版表现最佳，推荐 2:3 比例"
+    },
+    "pinterest-square": {
+      "name": "Pinterest 方版图钉",
+      "width": 1000,
+      "height": 1000,
+      "safe_area": {
+        "top": 30,
+        "bottom": 30,
+        "left": 30,
+        "right": 30
+      },
+      "format": [
+        "jpeg",
+        "png"
+      ],
+      "max_size_mb": 10,
+      "ratio": "1:1"
+    },
+    "pinterest-idea": {
+      "name": "Pinterest Idea Pin",
+      "width": 1080,
+      "height": 1920,
+      "safe_area": {
+        "top": 80,
+        "bottom": 200,
+        "left": 40,
+        "right": 40
+      },
+      "format": [
+        "jpeg",
+        "png"
+      ],
+      "max_size_mb": 10,
+      "ratio": "9:16"
+    },
+    "linkedin-landscape": {
+      "name": "LinkedIn 横版贴文",
+      "width": 1200,
+      "height": 627,
+      "safe_area": {
+        "top": 20,
+        "bottom": 20,
+        "left": 30,
+        "right": 30
+      },
+      "format": [
+        "jpeg",
+        "png"
+      ],
+      "max_size_mb": 10,
+      "ratio": "1200:627"
+    },
+    "linkedin-square": {
+      "name": "LinkedIn 方版贴文",
+      "width": 1080,
+      "height": 1080,
+      "safe_area": {
+        "top": 30,
+        "bottom": 30,
+        "left": 30,
+        "right": 30
+      },
+      "format": [
+        "jpeg",
+        "png"
+      ],
+      "max_size_mb": 10,
+      "ratio": "1:1"
+    },
+    "linkedin-banner": {
+      "name": "LinkedIn 公司封面",
+      "width": 1128,
+      "height": 191,
+      "safe_area": {
+        "top": 10,
+        "bottom": 10,
+        "left": 20,
+        "right": 20
+      },
+      "format": [
+        "jpeg",
+        "png"
+      ],
+      "max_size_mb": 5,
+      "ratio": "1128:191",
+      "note": "超宽比例，文字精简为主"
+    }
+  },
+  "PLATFORM_ALIASES": {
+    "微信公众号": "wechat-cover",
+    "公众号": "wechat-cover",
+    "微信": "wechat-cover",
+    "朋友圈": "wechat-moments-portrait",
+    "小红书封面": "xiaohongshu-cover",
+    "小红书": "xiaohongshu-cover",
+    "抖音": "douyin-cover",
+    "微博": "weibo-horizontal",
+    "微博横版": "weibo-horizontal",
+    "微博方版": "weibo-square",
+    "微博竖版": "weibo-vertical",
+    "视频号": "video-cover",
+    "B站": "bilibili-cover",
+    "B站封面": "bilibili-cover",
+    "bilibili": "bilibili-cover",
+    "知乎": "zhihu-cover",
+    "淘宝": "taobao-main",
+    "淘宝主图": "taobao-main",
+    "快手": "kuaishou-cover",
+    "公众号封面": "wechat-cover",
+    "朋友圈竖版": "wechat-moments-portrait",
+    "朋友圈方版": "wechat-moments-square",
+    "facebook": "facebook-square",
+    "fb": "facebook-square",
+    "Facebook": "facebook-square",
+    "Facebook方版": "facebook-square",
+    "Facebook横版": "facebook-landscape",
+    "Facebook封面": "facebook-cover",
+    "Facebook快拍": "facebook-stories",
+    "instagram": "instagram-square",
+    "ig": "instagram-square",
+    "Instagram": "instagram-square",
+    "Instagram方版": "instagram-square",
+    "Instagram竖版": "instagram-portrait",
+    "Instagram快拍": "instagram-stories",
+    "twitter": "twitter-square",
+    "x": "twitter-square",
+    "Twitter": "twitter-square",
+    "Twitter方版": "twitter-square",
+    "Twitter横版": "twitter-landscape",
+    "Twitter横幅": "twitter-banner",
+    "Twitter信息流": "twitter-instream",
+    "pinterest": "pinterest-pin",
+    "Pinterest": "pinterest-pin",
+    "Pinterest图钉": "pinterest-pin",
+    "Pinterest方版": "pinterest-square",
+    "linkedin": "linkedin-landscape",
+    "LinkedIn": "linkedin-landscape",
+    "LinkedIn横版": "linkedin-landscape",
+    "LinkedIn方版": "linkedin-square",
+    "LinkedIn封面": "linkedin-banner"
+  },
+  "SCENE_GROUPS": {
+    "social-media": [
+      "wechat-cover",
+      "weibo-horizontal",
+      "xiaohongshu-cover",
+      "douyin-cover"
+    ],
+    "e-commerce": [
+      "taobao-main"
+    ],
+    "short-video": [
+      "douyin-cover",
+      "kuaishou-cover",
+      "video-cover"
+    ],
+    "knowledge": [
+      "zhihu-cover",
+      "bilibili-cover"
+    ]
+  }
+}

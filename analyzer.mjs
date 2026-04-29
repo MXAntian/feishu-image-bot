@@ -23,25 +23,35 @@ const BASE_SYSTEM_PROMPT = `你是一个专业的 AI 生图提示词优化师。
   "clarification_question": "",
   "outputs": [
     {
-      "mode": "text2img" | "img2img" | "image_edit" | "resize",
+      "mode": "text2img" | "img2img" | "image_edit" | "platform-edit",
       "format": "json" | "plain",
-      "filename_suffix": "_json" | "_plain" | "_resize" | "",
-      "prompt": "最终发给生图模型的提示词（JSON 版就是 JSON 字符串，plain 版就是自然语言）；mode=resize 时填人类可读的目标说明",
+      "filename_suffix": "_json" | "_plain" | "_assets" | "",
+      "prompt": "最终发给生图模型的提示词（JSON 版就是 JSON 字符串，plain 版就是自然语言）。mode=platform-edit 时这个字段留空",
       "negative_prompt": "可选，仅 plain 版用得到",
-      "size": "(仅 mode=resize 用) 见 image-resize skill",
-      "fit": "(仅 mode=resize 用) cover/contain/fill/inside/outside"
+      "platforms": "(仅 mode=platform-edit 用) 平台 key 逗号分隔，支持别名 + 内联 名:WxH，如 \"wechat-cover,小红书,五一活动:1200x800\"",
+      "scene": "(仅 mode=platform-edit 用) 活动/场景名（用于 prompt 上下文，如 \"五一活动\"）",
+      "extra_prompt": "(仅 mode=platform-edit 用) 用户原始的额外指令（如 \"不要带 logo\" / \"加'立即购买'文字\"）",
+      "verify": "(仅 mode=platform-edit 用) 是否启用 AI 自检，bool；用户没明说就 false"
     }
   ]
 }
 
 通用约束：
-- 单纯改图 → outputs 1 个，format 由 skill 决定（默认 json）。
+- 单纯改图 → outputs 1 个，mode=image_edit，format 由 skill 决定（默认 json）。
 - 生图 + 有参考图 → 按 skill 要求输出 2 个（一个 json 一个 plain）。
 - 生图 + 无参考图 → outputs 1 个，format=plain。
-- 纯尺寸/比例/裁切（image-resize skill 触发）→ outputs 1 个，mode=resize，含 size 字段。
+- **多平台尺寸延展（image-assets-resize skill 触发）→ outputs 1 个，mode=platform-edit，platforms 字段写所有平台 key 逗号分隔**。这种情况下 prompt 字段留空——真实 prompt 由 platform-edit 模块按规格自动构建。
 - 提示词语言：中文场景/中文文字渲染用中文，其他英文。
 - needs_clarification=true 时 outputs 可以是空数组 []。
-- 不要解释、不要 markdown、直接输出 JSON。`
+- 不要解释、不要 markdown、直接输出 JSON。
+
+平台识别（platform-edit 触发判断）：
+- **明示**：用户直接说出平台名 / 别名（"小红书"、"朋友圈"、"抖音封面"、"B站"、"微博"、"FB"、"IG"、"X/Twitter"、"Pinterest"、"LinkedIn" 等）→ 提取
+- **隐式**：用户说"我要发朋友圈"、"做个 B 站封面"、"小红书爆款封面" → 推导出 platform key
+- **多平台**：用户说"做小红书 + 抖音两版" / "公众号封面 + 朋友圈各一份" → platforms 多个用逗号
+- **自定义尺寸**："做个 1200×800 的封面" → 用内联格式（platforms="自定义:1200x800"）
+- **场景组**：用户说"做一套社媒图" → platforms="social-media"（会展开成多个）
+- **没有平台意图**（仅说"改成竖版"、"裁成正方形"、"改成 1:1"）→ 也走 platform-edit 用内联格式 platforms="自定义:HxW"`
 
 function buildSystemPrompt(historyBlock = '') {
   const skillsBlock = getSkillsPromptBlock()
@@ -181,9 +191,12 @@ export function normalizeAnalysis(raw) {
         filename_suffix: o.filename_suffix || '',
         prompt: o.prompt || '',
         negative_prompt: o.negative_prompt || '',
-        size: o.size || null,
-        fit: o.fit || null,
-      })).filter(o => o.prompt || o.mode === 'resize'),
+        // platform-edit fields:
+        platforms: o.platforms || null,
+        scene: o.scene || '',
+        extra_prompt: o.extra_prompt || '',
+        verify: !!o.verify,
+      })).filter(o => o.prompt || o.mode === 'platform-edit'),
     }
   }
 
