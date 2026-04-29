@@ -24,6 +24,8 @@ import { generateImage as generateImageAPI } from './painter.mjs'
 import { generateImage as generateImageCodex } from './painter-codex.mjs'
 import { initSkills, listSkills } from './skills.mjs'
 import { maybeFlattenAlpha } from './flatten-alpha.mjs'
+import { resizeImage, describeResize } from './resizer.mjs'
+import { SessionManager } from './session.mjs'
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
 
@@ -69,6 +71,15 @@ let BOT_OPEN_ID = null
 function log(msg) {
   console.log(`[${new Date().toISOString()}] ${msg}`)
 }
+
+// ── 轻量 session 管理（per chat:sender，TTL 15min，LRU 200）──
+const SESSION_TTL_MIN = parseInt(process.env.SESSION_TTL_MIN || '15', 10)
+const SESSION_MAX = parseInt(process.env.SESSION_MAX || '200', 10)
+const sessions = new SessionManager({
+  ttlMs: SESSION_TTL_MIN * 60_000,
+  maxSessions: SESSION_MAX,
+  log: (msg) => log(msg),
+})
 
 // ── 消息去重 ────────────────────────────────────────────────
 const processedMsgIds = new Set()
@@ -161,7 +172,10 @@ async function handleMessage(event) {
   const msgType = msg.message_type
   const senderId = event.sender?.sender_id?.open_id
 
-  log(`📨 处理消息 type=${msgType} from=${senderId} chat=${chatId}`)
+  // session key = chat + sender，群里多人独立隔离
+  const sessionKey = SessionManager.makeKey(chatId, senderId)
+
+  log(`📨 处理消息 type=${msgType} from=${senderId} chat=${chatId} session=${sessionKey}`)
 
   try {
     // 1. 提取文字内容
@@ -181,6 +195,13 @@ async function handleMessage(event) {
         }
       }
       userText = userText.trim()
+    }
+
+    // 1.5 重置关键词检测：用户主动清掉迭代上下文
+    if (sessions.detectReset(userText)) {
+      sessions.clear(sessionKey)
+      await sendText(creds, chatId, `🧹 已重置上下文，下一条消息从新主题开始~`)
+      return
     }
 
     if (!userText && msgType === 'text') {
@@ -227,6 +248,19 @@ async function handleMessage(event) {
       log(`🧽 检测到透明 PNG 参考图，已压平到 ${FLATTEN_BG} 底（防 GPT Image 色块污染）`)
     }
 
+    // 2.6 上一轮生成图自动复用：用户本轮没传图 + session 里有上一版生成图
+    //     → 自动作为参考图。这样"再黑一点 / 改成竖版" 能基于上一版迭代。
+    let usedSessionImage = false
+    if (rawImageBuffers.length === 0) {
+      const prev = sessions.peek(sessionKey)
+      if (prev && prev.lastImage) {
+        imageBuffers.push(prev.lastImage)
+        imageBase64List.push(prev.lastImage.toString('base64'))
+        usedSessionImage = true
+        log(`♻️  复用 session 上一轮生成图作为参考 (key=${sessionKey})`)
+      }
+    }
+
     if (!userText && imageBase64List.length === 0) {
       await sendText(creds, chatId, '没有收到有效的文字或图片，请重新发送~')
       return
@@ -234,10 +268,12 @@ async function handleMessage(event) {
 
     // 3. 发送"处理中"提示
     const timeHint = PROVIDER === 'codex' ? '\n⏱️ 预计需要 2~3 分钟' : ''
-    await sendText(creds, chatId, `🎨 收到！正在为你生成图片...${timeHint}\n📝 需求：${userText || '(基于参考图生成)'}`)
+    const sessionHint = usedSessionImage ? '\n♻️ 基于上一轮的图继续迭代' : ''
+    await sendText(creds, chatId, `🎨 收到！正在为你生成图片...${timeHint}${sessionHint}\n📝 需求：${userText || '(基于参考图生成)'}`)
 
-    // 4. GPT 推理分析需求
-    log(`🧠 GPT 推理中... provider=${PROVIDER}`)
+    // 4. GPT 推理分析需求（带上 session 历史给 LLM 当上下文）
+    const historyBlock = sessions.getHistoryBlock(sessionKey)
+    log(`🧠 GPT 推理中... provider=${PROVIDER}${historyBlock ? ' (with history)' : ''}`)
     const analyzeFn = PROVIDER === 'codex' ? analyzeRequestCodex : analyzeRequestAPI
     const analysis = await analyzeFn(apiKey, userText, imageBase64List, {
       provider: PROVIDER,
@@ -245,6 +281,7 @@ async function handleMessage(event) {
       // 告诉 analyzer：参考图被压成纯底了，让它在生图 prompt 里说明"那个底色不是想要的背景"
       refsFlattened: anyFlattened,
       flattenBg: FLATTEN_BG,
+      historyBlock,
     })
 
     if (VERBOSE) log(`📋 分析结果: ${JSON.stringify(analysis)}`)
@@ -270,34 +307,76 @@ async function handleMessage(event) {
     // 5. 循环生图（每个 output 一次）
     const genFn = PROVIDER === 'codex' ? generateImageCodex : generateImageAPI
     let okCount = 0
+    let lastSuccessImage = null   // 用于写回 session（取最后一次成功的）
+    let lastSuccessMode = null
     for (let i = 0; i < outputs.length; i++) {
       const out = outputs[i]
-      const label = out.format === 'json' ? 'JSON 版' : (out.format === 'plain' ? '自然语言版' : `第 ${i+1} 版`)
-      log(`🖼️ 生图 ${i+1}/${outputs.length} (${label}) mode=${out.mode}`)
+      let label
+      if (out.mode === 'resize') label = '尺寸调整版'
+      else if (out.format === 'json') label = 'JSON 版'
+      else if (out.format === 'plain') label = '自然语言版'
+      else label = `第 ${i+1} 版`
+      log(`🖼️ 生成 ${i+1}/${outputs.length} (${label}) mode=${out.mode}`)
       try {
-        // 把 outputs[i] 摊平成 painter 期望的 analysis 格式
-        const subAnalysis = {
-          mode: out.mode,
-          prompt: out.prompt,
-          negative_prompt: out.negative_prompt || '',
-          summary: analysis.summary,
+        let imageBuffer
+        let extraInfo = ''
+
+        if (out.mode === 'resize') {
+          // ── 本地像素 resize（绕过 GPT Image）──
+          if (imageBuffers.length === 0) {
+            throw new Error('resize 需要参考图，但当前没有可用的图')
+          }
+          // 用第一张参考图（用户传的或上一轮的生成图）
+          const t0 = Date.now()
+          const result = await resizeImage(imageBuffers[0], {
+            size: out.size,
+            fit: out.fit || 'cover',
+          })
+          imageBuffer = result.buf
+          extraInfo = ` ${describeResize(result.info)} (${Date.now() - t0}ms)`
+          log(`✂️  本地 resize 完成${extraInfo}`)
+        } else {
+          // ── 走 GPT Image 生图 ──
+          const subAnalysis = {
+            mode: out.mode,
+            prompt: out.prompt,
+            negative_prompt: out.negative_prompt || '',
+            summary: analysis.summary,
+          }
+          imageBuffer = await genFn(apiKey, subAnalysis, imageBuffers, { provider: PROVIDER, baseUrl: OPENAI_BASE_URL })
         }
-        const imageBuffer = await genFn(apiKey, subAnalysis, imageBuffers, { provider: PROVIDER, baseUrl: OPENAI_BASE_URL })
+
         log(`📤 上传图 ${i+1}/${outputs.length} 到飞书...`)
         const imageKey = await uploadImage(creds, imageBuffer)
-        if (multi) {
-          await sendText(creds, chatId, `📦 ${label}${out.filename_suffix ? ` (${out.filename_suffix})` : ''}：`)
+        if (multi || out.mode === 'resize') {
+          await sendText(creds, chatId, `📦 ${label}${out.filename_suffix ? ` (${out.filename_suffix})` : ''}${extraInfo}`)
         }
         await sendImage(creds, chatId, imageKey)
         okCount++
+        lastSuccessImage = imageBuffer
+        lastSuccessMode = out.mode
         log(`✅ 完成 ${i+1}/${outputs.length}！image_key=${imageKey}`)
       } catch (innerErr) {
-        log(`❌ 第 ${i+1} 版生图失败: ${innerErr.message}`)
+        log(`❌ 第 ${i+1} 版生成失败: ${innerErr.message}`)
         await sendText(creds, chatId, `❌ ${label}生成失败：${innerErr.message}`)
       }
     }
 
-    if (multi) log(`📊 多版生图完成 ${okCount}/${outputs.length}`)
+    if (multi) log(`📊 多版生成完成 ${okCount}/${outputs.length}`)
+
+    // 6. 写回 session：成功才记，失败不污染上下文
+    //    lastImage 给下一轮做参考图；turn 给 analyzer 做 history block
+    if (okCount > 0) {
+      sessions.pushTurn(sessionKey, {
+        userText,
+        summary: analysis.summary,
+        lastPromptHint: (outputs[0]?.prompt || '').slice(0, 600),
+        mode: lastSuccessMode || outputs[0]?.mode || 'text2img',
+      })
+      if (lastSuccessImage) {
+        sessions.setLastImage(sessionKey, lastSuccessImage, 'image/png')
+      }
+    }
 
   } catch (err) {
     log(`❌ 处理失败: ${err.message}`)
@@ -335,6 +414,8 @@ async function main() {
   log(`🚀 太空杀飞书生图机器人启动`)
   log(`   Provider: ${PROVIDER}`)
   log(`   Verbose: ${VERBOSE}`)
+  log(`   Session: TTL=${SESSION_TTL_MIN}min · max=${SESSION_MAX} · key=chat:sender · 重置词=/new /reset 新主题 重新开始 ...`)
+  sessions.startSweeper(60_000)
 
   // 拉取机器人自身 open_id —— 用于群聊里识别"是否被 @"
   // 失败也不阻止启动（私聊还能用），但群聊会被 enqueueTask 跳过并打日志

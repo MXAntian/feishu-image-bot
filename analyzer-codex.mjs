@@ -22,8 +22,8 @@ export async function analyzeRequest(_apiKey, userText, imageBase64List = [], op
   const timeoutSec = options.timeoutSec || 180  // skill 加大后 system prompt 更长，给 3min
   const codexExe = resolveCodex()
 
-  // 构造 instruction：system prompt + 用户需求 + flatten notice
-  let instruction = buildSystemPrompt() + '\n\n---\n\n用户需求：\n'
+  // 构造 instruction：system prompt (含 history) + 用户需求 + flatten notice
+  let instruction = buildSystemPrompt(options.historyBlock || '') + '\n\n---\n\n用户需求：\n'
   instruction += userText || '请根据附图生成类似风格的图片'
   instruction += buildFlattenNotice(options.refsFlattened, options.flattenBg)
 

@@ -23,11 +23,13 @@ const BASE_SYSTEM_PROMPT = `你是一个专业的 AI 生图提示词优化师。
   "clarification_question": "",
   "outputs": [
     {
-      "mode": "text2img" | "img2img" | "image_edit",
+      "mode": "text2img" | "img2img" | "image_edit" | "resize",
       "format": "json" | "plain",
-      "filename_suffix": "_json" | "_plain" | "",
-      "prompt": "最终发给生图模型的提示词（JSON 版就是 JSON 字符串，plain 版就是自然语言）",
-      "negative_prompt": "可选，仅 plain 版用得到"
+      "filename_suffix": "_json" | "_plain" | "_resize" | "",
+      "prompt": "最终发给生图模型的提示词（JSON 版就是 JSON 字符串，plain 版就是自然语言）；mode=resize 时填人类可读的目标说明",
+      "negative_prompt": "可选，仅 plain 版用得到",
+      "size": "(仅 mode=resize 用) 见 image-resize skill",
+      "fit": "(仅 mode=resize 用) cover/contain/fill/inside/outside"
     }
   ]
 }
@@ -36,14 +38,17 @@ const BASE_SYSTEM_PROMPT = `你是一个专业的 AI 生图提示词优化师。
 - 单纯改图 → outputs 1 个，format 由 skill 决定（默认 json）。
 - 生图 + 有参考图 → 按 skill 要求输出 2 个（一个 json 一个 plain）。
 - 生图 + 无参考图 → outputs 1 个，format=plain。
+- 纯尺寸/比例/裁切（image-resize skill 触发）→ outputs 1 个，mode=resize，含 size 字段。
 - 提示词语言：中文场景/中文文字渲染用中文，其他英文。
 - needs_clarification=true 时 outputs 可以是空数组 []。
 - 不要解释、不要 markdown、直接输出 JSON。`
 
-function buildSystemPrompt() {
+function buildSystemPrompt(historyBlock = '') {
   const skillsBlock = getSkillsPromptBlock()
-  if (!skillsBlock) return BASE_SYSTEM_PROMPT
-  return BASE_SYSTEM_PROMPT + '\n\n' + skillsBlock
+  let out = BASE_SYSTEM_PROMPT
+  if (skillsBlock) out += '\n\n' + skillsBlock
+  if (historyBlock) out += '\n\n' + historyBlock
+  return out
 }
 
 /**
@@ -90,7 +95,7 @@ export async function analyzeRequest(apiKey, userText, imageBase64List = [], opt
     })
   }
 
-  const systemPrompt = buildSystemPrompt()
+  const systemPrompt = buildSystemPrompt(options.historyBlock || '')
 
   const messages = [
     { role: 'system', content: systemPrompt },
@@ -176,7 +181,9 @@ export function normalizeAnalysis(raw) {
         filename_suffix: o.filename_suffix || '',
         prompt: o.prompt || '',
         negative_prompt: o.negative_prompt || '',
-      })).filter(o => o.prompt),
+        size: o.size || null,
+        fit: o.fit || null,
+      })).filter(o => o.prompt || o.mode === 'resize'),
     }
   }
 
