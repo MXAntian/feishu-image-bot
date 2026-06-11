@@ -77,11 +77,14 @@ function resolveCodex() {
 
 function runCodex(codexExe, instruction, refPaths, timeoutSec) {
   return new Promise((resolve, reject) => {
+    // 2026-06-11 千夏 catch + fix: codex exec 默认 gpt-5.3-codex,
+      // ChatGPT plan 不支持,必须显式 -m gpt-5.5 才走 ChatGPT plan 支持的 model。
     const args = [
       'exec',
       '--skip-git-repo-check',
       '--sandbox', 'read-only',
       '--color', 'never',
+      '-m', 'gpt-5.5',
     ]
     for (const ref of refPaths) {
       args.push('-i', ref)
